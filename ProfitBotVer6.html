@@ -799,6 +799,11 @@
           <button id="test-telegram-btn" onclick="testTelegramAlert()" style="background: linear-gradient(45deg, #0088cc, #006699); color: white;">📱 TEST TELEGRAM</button>
           <!-- NEW: ML Training Button -->
           <button id="ml-train-btn" onclick="forceMLTraining()" style="background: linear-gradient(45deg, #ff44aa, #ff66bb); color: white;">🤖 TRAIN ML</button>
+          <!-- NEW: Data Management Buttons -->
+          <button onclick="exportBotData()" style="background: linear-gradient(45deg, #ffaa33, #ffcc66); color: black;">💾 Export Data</button>
+          <input type="file" id="import-file" accept=".json" style="display: none;" onchange="importBotData(event)">
+          <button onclick="document.getElementById('import-file').click()" style="background: linear-gradient(45deg, #00aaff, #0088cc); color: white;">📥 Import Data</button>
+          <button onclick="clearBotData()" style="background: linear-gradient(45deg, #ff4444, #ff6666); color: white;">🗑️ Clear Data</button>
         </div>
 
         <!-- NEW: Symbol Selector -->
@@ -946,6 +951,15 @@
             <span>ML Enhancement:</span>
             <span id="ml-status" style="color: #cccccc;">OFF</span>
           </div>
+          <!-- NEW: Win Rate and Wins/Losses -->
+          <div class="status-info">
+            <span>Win Rate:</span>
+            <span id="win-rate" style="color: #cccccc;">0%</span>
+          </div>
+          <div class="status-info">
+            <span>Wins/Losses:</span>
+            <span id="wins-losses" style="color: #cccccc;">0/0</span>
+          </div>
         </div>
       </div>
     </div>
@@ -972,7 +986,7 @@
           <table id="trade-log">
             <thead>
               <tr>
-                <th>Time</th><th>Symbol</th><th>Signal</th><th>Entry</th><th>TP</th><th>SL</th><th>RR</th><th>Confidence</th><th>Regime</th><th>Trend</th><th>Volume Conf</th><th>Patterns</th><th>Strategy</th><th>Adaptive Score</th><th>Result</th>
+                <th>Time</th><th>Symbol</th><th>Signal</th><th>Entry</th><th>TP</th><th>SL</th><th>RR</th><th>Confidence</th><th>Regime</th><th>Trend</th><th>Volume Conf</th><th>Patterns</th><th>Strategy</th><th>Adaptive Score</th><th>Result</th><th>P/L %</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -1085,6 +1099,475 @@
 
   <audio id="alert-sound" src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" preload="auto"></audio>
 <script>
+/* ============================
+   PERSISTENT STORAGE SYSTEM
+   ============================ */
+
+// NEW: Save bot state to localStorage
+function saveBotState() {
+    try {
+        const state = {
+            // ML Models and Training Data
+            mlModels: serializeMLModels(),
+            trainingData: trainingData,
+            
+            // Trading History
+            tradeHistory: tradeHistory,
+            performanceMetrics: performanceMetrics,
+            
+            // Active Trades
+            activeTrades: activeTrades,
+            
+            // Bot Configuration
+            symbols: symbols,
+            selectedSymbol: selectedSymbol,
+            currentStrategy: currentStrategy,
+            
+            // Error and Recovery State
+            errorCount: errorCount,
+            consecutiveErrors: consecutiveErrors,
+            recoveryAttempts: recoveryAttempts,
+            
+            // Signal History
+            signalCount: signalCount,
+            lastSignals: lastSignals,
+            
+            // Win/Loss Tracking
+            wins: wins,
+            losses: losses,
+            
+            // Timestamp
+            lastSave: Date.now()
+        };
+        
+        localStorage.setItem('tradingBotState', JSON.stringify(state));
+        console.log('💾 Bot state saved successfully');
+        
+        // Update UI indicator
+        const saveIndicator = document.getElementById('save-indicator') || createSaveIndicator();
+        saveIndicator.textContent = `💾 Saved ${new Date().toLocaleTimeString()}`;
+        
+    } catch (error) {
+        console.error('❌ Failed to save bot state:', error);
+    }
+}
+
+// NEW: Load bot state from localStorage
+function loadBotState() {
+    try {
+        const saved = localStorage.getItem('tradingBotState');
+        if (!saved) {
+            console.log('🔍 No saved state found, starting fresh');
+            return false;
+        }
+        
+        const state = JSON.parse(saved);
+        
+        // Restore ML Models and Training Data
+        if (state.mlModels) {
+            deserializeMLModels(state.mlModels);
+        }
+        if (state.trainingData) {
+            trainingData = state.trainingData;
+        }
+        
+        // Restore Trading History
+        if (state.tradeHistory) tradeHistory = state.tradeHistory;
+        if (state.performanceMetrics) performanceMetrics = state.performanceMetrics;
+        
+        // Restore Active Trades
+        if (state.activeTrades) activeTrades = state.activeTrades;
+        
+        // Restore Configuration
+        if (state.symbols) symbols = state.symbols;
+        if (state.selectedSymbol) selectedSymbol = state.selectedSymbol;
+        if (state.currentStrategy) currentStrategy = state.currentStrategy;
+        
+        // Restore Error State
+        if (state.errorCount) errorCount = state.errorCount;
+        if (state.consecutiveErrors) consecutiveErrors = state.consecutiveErrors;
+        if (state.recoveryAttempts) recoveryAttempts = state.recoveryAttempts;
+        
+        // Restore Signal History
+        if (state.signalCount) signalCount = state.signalCount;
+        if (state.lastSignals) lastSignals = state.lastSignals;
+        
+        // Restore Win/Loss Tracking
+        if (state.wins) wins = state.wins;
+        if (state.losses) losses = state.losses;
+        
+        console.log('🔄 Bot state loaded successfully');
+        updateUIFromSavedState();
+        
+        return true;
+        
+    } catch (error) {
+        console.error('❌ Failed to load bot state:', error);
+        return false;
+    }
+}
+
+// NEW: Serialize ML Models for storage
+function serializeMLModels() {
+    if (!mlModels.ensemble) return null;
+    
+    return {
+        ensemble: {
+            weights: mlModels.ensemble.weights,
+            performance: mlModels.ensemble.performance,
+            adaptationRate: mlModels.ensemble.adaptationRate
+        },
+        // Add other models as needed
+        lastTraining: Date.now()
+    };
+}
+
+// NEW: Deserialize ML Models from storage
+function deserializeMLModels(serialized) {
+    if (!serialized || !serialized.ensemble) return;
+    
+    // Reinitialize ensemble
+    if (!mlModels.ensemble) {
+        mlModels.ensemble = new EnsembleTradingModel();
+    }
+    
+    // Restore ensemble state
+    mlModels.ensemble.weights = serialized.ensemble.weights || mlModels.ensemble.weights;
+    mlModels.ensemble.performance = serialized.ensemble.performance || mlModels.ensemble.performance;
+    mlModels.ensemble.adaptationRate = serialized.ensemble.adaptationRate || mlModels.ensemble.adaptationRate;
+    
+    console.log('🤖 ML Models restored from storage');
+}
+
+// NEW: Update UI after loading saved state
+function updateUIFromSavedState() {
+    // Update performance metrics
+    document.getElementById('signal-count').textContent = signalCount;
+    document.getElementById('error-count').textContent = errorCount;
+    
+    // Update win rate and wins/losses
+    updateWinRateDisplay();
+    
+    // Update ML performance display
+    updateMLPerformanceDashboard();
+    
+    // Update active trades display
+    updateActiveTradeUI();
+    
+    // Update multi-symbol signals
+    updateMultiSymbolSignals();
+    
+    console.log('🔄 UI updated from saved state');
+}
+
+// NEW: Create save indicator in UI
+function createSaveIndicator() {
+    const indicator = document.createElement('div');
+    indicator.id = 'save-indicator';
+    indicator.style.cssText = `
+        position: fixed;
+        bottom: 10px;
+        right: 10px;
+        background: #1a1a2a;
+        color: #00ff00;
+        padding: 5px 10px;
+        border-radius: 5px;
+        font-size: 12px;
+        border: 1px solid #00ff00;
+        z-index: 1000;
+    `;
+    indicator.textContent = '💾 Ready';
+    document.body.appendChild(indicator);
+    return indicator;
+}
+
+// NEW: Auto-save function with throttling
+let lastSaveTime = 0;
+const SAVE_INTERVAL = 30000; // Save every 30 seconds
+
+function autoSave() {
+    const now = Date.now();
+    if (now - lastSaveTime > SAVE_INTERVAL) {
+        saveBotState();
+        lastSaveTime = now;
+    }
+}
+
+// NEW: Save on page unload
+function setupPageUnloadSave() {
+    window.addEventListener('beforeunload', function() {
+        saveBotState();
+        // Note: This might not work in all browsers due to security restrictions
+    });
+    
+    // Alternative: Use page visibility API
+    document.addEventListener('visibilitychange', function() {
+        if (document.hidden) {
+            saveBotState();
+        }
+    });
+}
+
+// NEW: Export/Import functionality
+function exportBotData() {
+    const data = {
+        mlModels: serializeMLModels(),
+        trainingData: trainingData,
+        tradeHistory: tradeHistory,
+        performanceMetrics: performanceMetrics,
+        wins: wins,
+        losses: losses,
+        exportTime: new Date().toISOString()
+    };
+    
+    const dataStr = JSON.stringify(data, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `trading-bot-backup-${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+    
+    URL.revokeObjectURL(url);
+}
+
+function importBotData(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const data = JSON.parse(e.target.result);
+            
+            if (confirm('This will replace your current bot data. Continue?')) {
+                // Restore data
+                if (data.mlModels) deserializeMLModels(data.mlModels);
+                if (data.trainingData) trainingData = data.trainingData;
+                if (data.tradeHistory) tradeHistory = data.tradeHistory;
+                if (data.performanceMetrics) performanceMetrics = data.performanceMetrics;
+                if (data.wins !== undefined) wins = data.wins;
+                if (data.losses !== undefined) losses = data.losses;
+                
+                saveBotState();
+                location.reload(); // Refresh to apply changes
+            }
+        } catch (error) {
+            alert('Error importing data: ' + error.message);
+        }
+    };
+    reader.readAsText(file);
+}
+
+// NEW: Clear all bot data
+function clearBotData() {
+    if (confirm('This will delete ALL bot data including ML training. Continue?')) {
+        localStorage.removeItem('tradingBotState');
+        localStorage.removeItem('tradingBotBackup');
+        
+        // Reset all variables
+        mlModels = { ensemble: null, patternRecognizer: null, regimeClassifier: null, performanceTracker: null };
+        trainingData = { features: [], labels: [], timestamps: [] };
+        tradeHistory = [];
+        activeTrades = {};
+        performanceMetrics = {
+            startTime: Date.now(),
+            signalsGenerated: 0,
+            errorsEncountered: 0,
+            recoveryAttempts: 0,
+            wsReconnects: 0,
+            avgProcessingTime: 0,
+            lastHealthCheck: null
+        };
+        
+        // Reset win/loss tracking
+        wins = 0;
+        losses = 0;
+        
+        // Reinitialize
+        initializeMLModels();
+        saveBotState();
+        location.reload();
+    }
+}
+
+/* ============================
+   WIN RATE AND WINS/LOSSES TRACKING
+   ============================ */
+
+// NEW: Win/Loss tracking variables
+let wins = 0;
+let losses = 0;
+
+// NEW: Update win rate display
+function updateWinRateDisplay() {
+    const totalTrades = wins + losses;
+    const winRate = totalTrades > 0 ? (wins / totalTrades * 100).toFixed(1) : 0;
+    
+    document.getElementById('win-rate').textContent = `${winRate}%`;
+    document.getElementById('wins-losses').textContent = `${wins}/${losses}`;
+    
+    // Color coding based on win rate
+    const winRateElement = document.getElementById('win-rate');
+    if (winRate >= 70) {
+        winRateElement.style.color = '#00ff00';
+    } else if (winRate >= 50) {
+        winRateElement.style.color = '#ffaa33';
+    } else {
+        winRateElement.style.color = '#ff4444';
+    }
+}
+
+// NEW: Update win/loss counters when trade closes
+function updateWinLossCounters(tradeResult, plPercent) {
+    if (tradeResult === 'TP HIT') {
+        wins++;
+        console.log(`✅ WIN recorded! Total wins: ${wins}`);
+    } else if (tradeResult === 'SL HIT') {
+        losses++;
+        console.log(`❌ LOSS recorded! Total losses: ${losses}`);
+    }
+    // Note: 'OVERRIDDEN' trades don't count as wins or losses
+    
+    updateWinRateDisplay();
+    saveBotState(); // Save after updating win/loss counters
+}
+
+// NEW: Enhanced trade closure with win/loss tracking
+function closeActiveTrade(symbol, result, exitPrice) {
+    if (!activeTrades[symbol]) return;
+    
+    // Calculate actual price movement for ML training
+    const trade = activeTrades[symbol];
+    let actualMovement = 0;
+    
+    if (trade.signal === "BUY") {
+        actualMovement = (exitPrice - trade.entry) / trade.entry;
+    } else {
+        actualMovement = (trade.entry - exitPrice) / trade.entry;
+    }
+    
+    // Normalize movement for ML
+    actualMovement = Math.max(-1, Math.min(1, actualMovement * 10));
+    
+    // Update ML models with this trade result
+    updateMLModelsWithTradeResult(symbol, trade, actualMovement);
+    
+    // Continue with normal trade closure
+    activeTrades[symbol].open = false;
+    activeTrades[symbol].closeTime = new Date();
+    activeTrades[symbol].result = result;
+    activeTrades[symbol].exitPrice = exitPrice;
+    
+    // Calculate P/L
+    let plPercent = 0;
+    if (activeTrades[symbol].signal === "BUY") {
+        plPercent = ((exitPrice - activeTrades[symbol].entry) / activeTrades[symbol].entry) * 100;
+    } else {
+        plPercent = ((activeTrades[symbol].entry - exitPrice) / activeTrades[symbol].entry) * 100;
+    }
+    activeTrades[symbol].plPercent = plPercent;
+    
+    // Add to history
+    tradeHistory.push({...activeTrades[symbol]});
+    
+    // Update win/loss counters
+    updateWinLossCounters(result, plPercent);
+    
+    // Update UI if this is the selected symbol
+    if (symbol === selectedSymbol) {
+        document.getElementById("trade-status").textContent = "TRADE CLOSED: " + result;
+        document.getElementById("trade-status").className = "trade-status inactive";
+    }
+    
+    // Log the closed trade
+    logTradeClose(activeTrades[symbol]);
+    
+    console.log(`🔒 Trade closed for ${symbol}: ${result} at ${exitPrice} (P/L: ${plPercent.toFixed(2)}%) - ML Models Updated`);
+    
+    // Send Telegram alert for trade closure
+    if (telegramAlertsEnabled && telegramChatId) {
+        sendTradeUpdateTelegramAlert(
+            symbol,
+            activeTrades[symbol],
+            result,
+            exitPrice
+        );
+    }
+    
+    // Reset active trade for this symbol
+    activeTrades[symbol] = null;
+    
+    // Play sound for trade closure
+    document.getElementById("alert-sound").play();
+}
+
+// NEW: Enhanced performance metrics with win rate
+function updatePerformanceMetrics() {
+    if (!performanceMetrics.startTime) {
+        performanceMetrics.startTime = Date.now();
+    }
+    
+    const uptime = Date.now() - performanceMetrics.startTime;
+    const hours = Math.floor(uptime / (1000 * 60 * 60));
+    const minutes = Math.floor((uptime % (1000 * 60 * 60)) / (1000 * 60));
+    
+    // Calculate performance score (0-100%)
+    const errorRate = performanceMetrics.errorsEncountered / Math.max(performanceMetrics.signalsGenerated, 1);
+    const performanceScore = Math.max(0, 100 - (errorRate * 100));
+    
+    // Calculate win rate
+    const totalTrades = wins + losses;
+    const winRate = totalTrades > 0 ? (wins / totalTrades * 100) : 0;
+    
+    document.getElementById('performance-score').textContent = `${performanceScore.toFixed(1)}%`;
+    document.getElementById('performance-score').style.color = 
+        performanceScore > 80 ? '#00ff00' : 
+        performanceScore > 60 ? '#ffaa33' : '#ff4444';
+    
+    // Update win rate display
+    updateWinRateDisplay();
+    
+    // Update performance tab
+    const systemHealth = document.getElementById('system-health');
+    const performanceStats = document.getElementById('performance-stats');
+    const circuitBreakerStatus = document.getElementById('circuit-breaker-status');
+    
+    if (systemHealth) {
+        systemHealth.innerHTML = `
+            <div style="color: ${performanceScore > 80 ? '#00ff00' : performanceScore > 60 ? '#ffaa33' : '#ff4444'}">
+                ${performanceScore > 80 ? '✅ EXCELLENT' : performanceScore > 60 ? '⚠️ STABLE' : '❌ DEGRADED'}
+            </div>
+            <div>Uptime: ${hours}h ${minutes}m</div>
+            <div>Recovery Attempts: ${performanceMetrics.recoveryAttempts}</div>
+            <div>Win Rate: ${winRate.toFixed(1)}%</div>
+        `;
+    }
+    
+    if (performanceStats) {
+        performanceStats.innerHTML = `
+            <div>Signals: ${performanceMetrics.signalsGenerated}</div>
+            <div>Errors: ${performanceMetrics.errorsEncountered}</div>
+            <div>WS Reconnects: ${performanceMetrics.wsReconnects}</div>
+            <div>Avg Processing: ${performanceMetrics.avgProcessingTime.toFixed(2)}ms</div>
+            <div>Wins: ${wins}</div>
+            <div>Losses: ${losses}</div>
+            <div>Win Rate: ${winRate.toFixed(1)}%</div>
+        `;
+    }
+    
+    if (circuitBreakerStatus) {
+        circuitBreakerStatus.innerHTML = `
+            <div>Status: <span style="color: ${circuitBreakerTripped ? '#ff4444' : '#00ff00'}">${circuitBreakerTripped ? 'TRIPPED' : 'READY'}</span></div>
+            <div>Consecutive Errors: ${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}</div>
+            <div>Total Errors: ${errorCount}</div>
+        `;
+    }
+    
+    performanceMetrics.lastHealthCheck = Date.now();
+}
+
 /* ============================
    MACHINE LEARNING ENHANCEMENTS
    ============================ */
@@ -2003,81 +2486,21 @@ function updateSignalDisplay(sig, symbol) {
     document.getElementById("confidence-text").textContent = `Confidence: ${sig.confidence.toFixed(1)}%${sig.mlConfidence ? ` (ML: ${(sig.mlConfidence * 100).toFixed(1)}%)` : ''}`;
 }
 
-// UPDATED: Enhanced trade closure with ML learning
-function closeActiveTrade(symbol, result, exitPrice) {
-    if (!activeTrades[symbol]) return;
-    
-    // Calculate actual price movement for ML training
-    const trade = activeTrades[symbol];
-    let actualMovement = 0;
-    
-    if (trade.signal === "BUY") {
-        actualMovement = (exitPrice - trade.entry) / trade.entry;
-    } else {
-        actualMovement = (trade.entry - exitPrice) / trade.entry;
-    }
-    
-    // Normalize movement for ML
-    actualMovement = Math.max(-1, Math.min(1, actualMovement * 10));
-    
-    // Update ML models with this trade result
-    updateMLModelsWithTradeResult(symbol, trade, actualMovement);
-    
-    // Continue with normal trade closure
-    activeTrades[symbol].open = false;
-    activeTrades[symbol].closeTime = new Date();
-    activeTrades[symbol].result = result;
-    activeTrades[symbol].exitPrice = exitPrice;
-    
-    // Calculate P/L
-    let plPercent = 0;
-    if (activeTrades[symbol].signal === "BUY") {
-        plPercent = ((exitPrice - activeTrades[symbol].entry) / activeTrades[symbol].entry) * 100;
-    } else {
-        plPercent = ((activeTrades[symbol].entry - exitPrice) / activeTrades[symbol].entry) * 100;
-    }
-    activeTrades[symbol].plPercent = plPercent;
-    
-    // Add to history
-    tradeHistory.push({...activeTrades[symbol]});
-    
-    // Update UI if this is the selected symbol
-    if (symbol === selectedSymbol) {
-        document.getElementById("trade-status").textContent = "TRADE CLOSED: " + result;
-        document.getElementById("trade-status").className = "trade-status inactive";
-    }
-    
-    // Log the closed trade
-    logTradeClose(activeTrades[symbol]);
-    
-    console.log(`🔒 Trade closed for ${symbol}: ${result} at ${exitPrice} (P/L: ${plPercent.toFixed(2)}%) - ML Models Updated`);
-    
-    // Send Telegram alert for trade closure
-    if (telegramAlertsEnabled && telegramChatId) {
-        sendTradeUpdateTelegramAlert(
-            symbol,
-            activeTrades[symbol],
-            result,
-            exitPrice
-        );
-    }
-    
-    // Reset active trade for this symbol
-    activeTrades[symbol] = null;
-    
-    // Play sound for trade closure
-    document.getElementById("alert-sound").play();
-}
-
-// UPDATED: Enhanced startBot with ML initialization
+// UPDATED: Enhanced startBot with persistence and ML
 async function startBot(){
     if(isRunning) return;
     
     try {
         isRunning = true;
         
-        // Parse symbols
-        parseSymbols();
+        // FIRST: Load previous state
+        const stateLoaded = loadBotState();
+        
+        // Parse symbols (use saved ones or from input)
+        if (!stateLoaded || symbols.length === 0) {
+            parseSymbols();
+        }
+        
         if (symbols.length === 0) {
             throw new Error("No valid symbols provided");
         }
@@ -2085,14 +2508,25 @@ async function startBot(){
         const interval = document.getElementById("timeframe").value;
         const strategy = document.getElementById("trading-strategy").value;
         
-        // Initialize ML Models
-        initializeMLModels();
+        // Initialize ML Models (only if not loaded from storage)
+        if (!mlModels.ensemble) {
+            initializeMLModels();
+        }
+        
+        // Setup persistence system
+        setupPageUnloadSave();
+        createSaveIndicator();
+        
+        // Start auto-save interval
+        setInterval(autoSave, 10000); // Check every 10 seconds
         
         // Update Telegram settings
         updateTelegramSettings();
         
-        // Reset error counters on fresh start
-        resetCircuitBreaker();
+        // Reset error counters on fresh start (only if no state loaded)
+        if (!stateLoaded) {
+            resetCircuitBreaker();
+        }
         
         // Update status indicators
         document.getElementById("status").textContent = "RUNNING";
@@ -2120,40 +2554,49 @@ async function startBot(){
             throw new Error(`API test failed: ${error.message}`);
         }
 
-        // Preload historic candles for each symbol with error handling
-        try {
-            document.getElementById("api-status").textContent = "🔄 Loading data...";
-            
-            for (const symbol of symbols) {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 15000);
-                
-                const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${BUFFER_SIZE}`, {
-                    signal: controller.signal
-                });
-                clearTimeout(timeoutId);
-                
-                if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText} for ${symbol}`);
-                
-                const hist = await res.json();
-                if (!Array.isArray(hist)) throw new Error("Invalid response format");
-                
-                candleBuffers[symbol] = hist.map(k => ({ time: k[0], open: +k[1], high: +k[2], low: +k[3], close: +k[4], volume: +k[5] }));
-                lastSignals[symbol] = null;
-                
-                console.log(`✅ Loaded ${candleBuffers[symbol].length} candles for ${symbol}`);
+        // Load historical data only if we don't have recent candles
+        let needHistoricalData = true;
+        if (candleBuffers[selectedSymbol] && candleBuffers[selectedSymbol].length > 100) {
+            const lastCandleTime = candleBuffers[selectedSymbol][candleBuffers[selectedSymbol].length - 1].time;
+            const timeDiff = Date.now() - lastCandleTime;
+            // If we have data from less than 5 minutes ago, reuse it
+            if (timeDiff < 5 * 60 * 1000) {
+                needHistoricalData = false;
+                console.log('🔄 Reusing existing candle data');
             }
-            
-            // Initialize candle count display
-            if (document.getElementById("candle-count")) {
-                document.getElementById("candle-count").textContent = candleBuffers[selectedSymbol] ? candleBuffers[selectedSymbol].length : 0;
-            }
-            document.getElementById("api-status").textContent = "✅ Data loaded";
-        } catch (err) {
-            throw new Error(`Failed to fetch historical candles: ${err.message}`);
         }
 
-        // Analyze initial data for each symbol with ML
+        if (needHistoricalData) {
+            try {
+                document.getElementById("api-status").textContent = "🔄 Loading data...";
+                
+                for (const symbol of symbols) {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 15000);
+                    
+                    const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${BUFFER_SIZE}`, {
+                        signal: controller.signal
+                    });
+                    clearTimeout(timeoutId);
+                    
+                    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText} for ${symbol}`);
+                    
+                    const hist = await res.json();
+                    if (!Array.isArray(hist)) throw new Error("Invalid response format");
+                    
+                    candleBuffers[symbol] = hist.map(k => ({ time: k[0], open: +k[1], high: +k[2], low: +k[3], close: +k[4], volume: +k[5] }));
+                    lastSignals[symbol] = null;
+                    
+                    console.log(`✅ Loaded ${candleBuffers[symbol].length} candles for ${symbol}`);
+                }
+                
+                document.getElementById("api-status").textContent = "✅ Data loaded";
+            } catch (err) {
+                throw new Error(`Failed to fetch historical candles: ${err.message}`);
+            }
+        }
+
+        // Analyze data for each symbol with ML
         symbols.forEach(symbol => {
             if (candleBuffers[symbol] && candleBuffers[symbol].length > 0) {
                 analyzeLive(symbol);
@@ -2162,7 +2605,7 @@ async function startBot(){
         
         updateChart();
 
-        // Open websocket for live kline updates with enhanced error handling
+        // Open websocket for live kline updates
         if(ws) {
             try { ws.close(); } catch(e) { console.warn('Error closing previous WS:', e); }
         }
@@ -2248,6 +2691,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Initialize ML models
     setTimeout(initializeMLModels, 1000);
+    
+    // Initialize win rate display
+    updateWinRateDisplay();
 });
 
 /* -------------------------
@@ -2885,59 +3331,6 @@ async function attemptRecovery() {
         showRecovery(`Recovery failed: ${error.message}`);
         return false;
     }
-}
-
-function updatePerformanceMetrics() {
-    if (!performanceMetrics.startTime) {
-        performanceMetrics.startTime = Date.now();
-    }
-    
-    const uptime = Date.now() - performanceMetrics.startTime;
-    const hours = Math.floor(uptime / (1000 * 60 * 60));
-    const minutes = Math.floor((uptime % (1000 * 60 * 60)) / (1000 * 60));
-    
-    // Calculate performance score (0-100%)
-    const errorRate = performanceMetrics.errorsEncountered / Math.max(performanceMetrics.signalsGenerated, 1);
-    const performanceScore = Math.max(0, 100 - (errorRate * 100));
-    
-    document.getElementById('performance-score').textContent = `${performanceScore.toFixed(1)}%`;
-    document.getElementById('performance-score').style.color = 
-        performanceScore > 80 ? '#00ff00' : 
-        performanceScore > 60 ? '#ffaa33' : '#ff4444';
-    
-    // Update performance tab
-    const systemHealth = document.getElementById('system-health');
-    const performanceStats = document.getElementById('performance-stats');
-    const circuitBreakerStatus = document.getElementById('circuit-breaker-status');
-    
-    if (systemHealth) {
-        systemHealth.innerHTML = `
-            <div style="color: ${performanceScore > 80 ? '#00ff00' : performanceScore > 60 ? '#ffaa33' : '#ff4444'}">
-                ${performanceScore > 80 ? '✅ EXCELLENT' : performanceScore > 60 ? '⚠️ STABLE' : '❌ DEGRADED'}
-            </div>
-            <div>Uptime: ${hours}h ${minutes}m</div>
-            <div>Recovery Attempts: ${performanceMetrics.recoveryAttempts}</div>
-        `;
-    }
-    
-    if (performanceStats) {
-        performanceStats.innerHTML = `
-            <div>Signals: ${performanceMetrics.signalsGenerated}</div>
-            <div>Errors: ${performanceMetrics.errorsEncountered}</div>
-            <div>WS Reconnects: ${performanceMetrics.wsReconnects}</div>
-            <div>Avg Processing: ${performanceMetrics.avgProcessingTime.toFixed(2)}ms</div>
-        `;
-    }
-    
-    if (circuitBreakerStatus) {
-        circuitBreakerStatus.innerHTML = `
-            <div>Status: <span style="color: ${circuitBreakerTripped ? '#ff4444' : '#00ff00'}">${circuitBreakerTripped ? 'TRIPPED' : 'READY'}</span></div>
-            <div>Consecutive Errors: ${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}</div>
-            <div>Total Errors: ${errorCount}</div>
-        `;
-    }
-    
-    performanceMetrics.lastHealthCheck = Date.now();
 }
 
 /* -------------------------
@@ -4001,11 +4394,9 @@ function checkActiveTrade(symbol) {
         if (currentPrice >= activeTrades[symbol].tp) {
             result = "TP HIT";
             console.log(`💰 Take Profit hit for ${symbol} at ${currentPrice}`);
-            closeActiveTrade(symbol, "TP HIT", currentPrice);
         } else if (currentPrice <= activeTrades[symbol].sl) {
             result = "SL HIT";
             console.log(`🛑 Stop Loss hit for ${symbol} at ${currentPrice}`);
-            closeActiveTrade(symbol, "SL HIT", currentPrice);
         }
     } else if (activeTrades[symbol].signal === "SELL") {
         plPercent = ((activeTrades[symbol].entry - currentPrice) / activeTrades[symbol].entry) * 100;
@@ -4013,17 +4404,20 @@ function checkActiveTrade(symbol) {
         if (currentPrice <= activeTrades[symbol].tp) {
             result = "TP HIT";
             console.log(`💰 Take Profit hit for ${symbol} at ${currentPrice}`);
-            closeActiveTrade(symbol, "TP HIT", currentPrice);
         } else if (currentPrice >= activeTrades[symbol].sl) {
             result = "SL HIT";
             console.log(`🛑 Stop Loss hit for ${symbol} at ${currentPrice}`);
-            closeActiveTrade(symbol, "SL HIT", currentPrice);
         }
     }
     
     // Update active trade UI only if trade is still open and is the selected symbol
     if (activeTrades[symbol] && activeTrades[symbol].open && symbol === selectedSymbol) {
         updateActiveTradeUI(currentPrice, plPercent, result);
+    }
+    
+    // Close trade if TP or SL hit
+    if (result === "TP HIT" || result === "SL HIT") {
+        closeActiveTrade(symbol, result, currentPrice);
     }
 }
 
@@ -4405,6 +4799,7 @@ function logTrade(symbol, sig){
     <td>${sig.strategy || 'N/A'}</td>
     <td>${sig.adaptiveScore ? sig.adaptiveScore.toFixed(1) : 'N/A'}</td>
     <td>OPEN</td>
+    <td>0%</td>
   `;
   tbody.prepend(tr);
 }
@@ -4413,6 +4808,7 @@ function logTrade(symbol, sig){
 function logTradeClose(trade) {
   const tbody = document.querySelector("#trade-log tbody");
   const tr = document.createElement("tr");
+  const plColor = trade.plPercent >= 0 ? '#00ff00' : '#ff4444';
   tr.innerHTML = `
     <td>${trade.openTime.toLocaleString()}</td>
     <td>${trade.symbol}</td>
@@ -4428,7 +4824,8 @@ function logTradeClose(trade) {
     <td>${trade.patterns.join(', ') || 'None'}</td>
     <td>${trade.strategy || 'N/A'}</td>
     <td>${trade.adaptiveScore ? trade.adaptiveScore.toFixed(1) : 'N/A'}</td>
-    <td style="color: ${trade.result === 'TP HIT' ? '#00ff00' : '#ff4444'}">${trade.result} (${trade.plPercent ? trade.plPercent.toFixed(2) + '%' : '0%'})</td>
+    <td style="color: ${trade.result === 'TP HIT' ? '#00ff00' : '#ff4444'}">${trade.result}</td>
+    <td style="color: ${plColor}">${trade.plPercent ? trade.plPercent.toFixed(2) + '%' : '0%'}</td>
   `;
   tbody.prepend(tr);
 }
@@ -4474,7 +4871,7 @@ function updateChart(){
       plot_bgcolor: "#0d0d0d", 
       font:{color:"#fff"}, 
       shapes,
-      title: `${selectedSymbol} | Market Regime: ${lastSig.marketRegime || 'N/A'} | Trend: ${lastSig.trend || 'N/A'} | Strategy: ${lastSig.strategy || 'N/A'} | Candles: ${candleBuffers[selectedSymbol].length}`
+      title: `${selectedSymbol} | Market Regime: ${lastSig.marketRegime || 'N/A'} | Trend: ${lastSig.trend || 'N/A'} | Strategy: ${lastSig.strategy || 'N/A'} | Candles: ${candleBuffers[selectedSymbol].length} | Win Rate: ${((wins / (wins + losses)) * 100 || 0).toFixed(1)}%`
     });
   } catch (error) {
     logError(error, 'Chart Update');
