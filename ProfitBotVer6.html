@@ -1450,6 +1450,12 @@ function closeActiveTrade(symbol, result, exitPrice) {
     
     // Normalize movement for ML
     actualMovement = Math.max(-1, Math.min(1, actualMovement * 10));
+
+    // Check for NaN
+    if (isNaN(actualMovement)) {
+        console.error(`NaN actualMovement for trade ${symbol}: exitPrice=${exitPrice}, entry=${trade.entry}, setting to 0`);
+        actualMovement = 0;
+    }
     
     // Update ML models with this trade result
     updateMLModelsWithTradeResult(symbol, trade, actualMovement);
@@ -1681,24 +1687,47 @@ class EnsembleTradingModel {
     }
     
     updateWeights(actualMovement, predictions) {
-        // Update model weights based on recent performance
+        // Check for NaN in actualMovement
+        if (isNaN(actualMovement)) {
+            console.error('NaN actualMovement in updateWeights, skipping');
+            return;
+        }
+
         for (const [modelName, prediction] of Object.entries(predictions.individualPredictions)) {
+            // Check for NaN in individual predictions
+            if (isNaN(prediction)) {
+                console.error(`NaN prediction for model ${modelName}, skipping weight update for this model`);
+                continue;
+            }
+            
             const error = Math.abs(prediction - actualMovement);
             const performanceScore = 1 - error;
-            
+
             // Update weight using exponential moving average
             this.weights[modelName] = this.weights[modelName] * (1 - this.adaptationRate) + 
                                      performanceScore * this.adaptationRate;
         }
-        
-        // Normalize weights
+
         this.normalizeWeights();
     }
     
     normalizeWeights() {
         const total = Object.values(this.weights).reduce((sum, weight) => sum + weight, 0);
-        for (const modelName in this.weights) {
-            this.weights[modelName] /= total;
+        
+        // Check for zero or NaN total and reset weights if needed
+        if (total === 0 || isNaN(total)) {
+            // Reset weights to initial values
+            this.weights = {
+                randomForest: 0.3,
+                svm: 0.25,
+                neuralNetwork: 0.25,
+                gradientBoosting: 0.2
+            };
+            console.warn('Ensemble weights were invalid, reset to initial weights');
+        } else {
+            for (const modelName in this.weights) {
+                this.weights[modelName] /= total;
+            }
         }
     }
     
@@ -2116,7 +2145,10 @@ function generateMLEnhancedSignal(data, riskLevel, tpMultiplier, symbol) {
 
 // NEW: Performance-Based ML Model Updates
 function updateMLModelsWithTradeResult(symbol, trade, actualMovement) {
-    if (!mlModels.ensemble || !candleBuffers[symbol]) return;
+    // Check for NaN in actualMovement and return early if found
+    if (!mlModels.ensemble || !candleBuffers[symbol] || isNaN(actualMovement)) {
+        return;
+    }
     
     try {
         // Extract features at trade entry time
@@ -2198,22 +2230,22 @@ function calculateMLPerformance() {
     
     // Simple performance calculation based on recent predictions
     for (let i = Math.max(0, trainingData.features.length - 50); i < trainingData.features.length; i++) {
-        if (mlModels.ensemble && mlModels.ensemble.isTrained) {
+        if (mlModels.ensemble) {
             const prediction = mlModels.ensemble.predict(trainingData.features[i]);
             const actual = trainingData.labels[i];
-            
+
             if ((prediction.prediction > 0 && actual > 0) || (prediction.prediction < 0 && actual < 0)) {
                 correctPredictions++;
             }
             totalPredictions++;
         }
     }
-    
+
     if (totalPredictions > 0) {
         const accuracy = (correctPredictions / totalPredictions * 100).toFixed(1);
         return `${accuracy}%`;
     }
-    
+
     return "Calculating...";
 }
 
@@ -4493,7 +4525,7 @@ function updateStrategyAnalysis(marketConditions, strategySelection) {
         scoresHtml += `<div style="margin: 5px 0;">
             <span style="text-transform: uppercase; font-weight: bold;">${strategy}:</span>
             <span style="color: ${scoreColor}; margin-left: 10px;">${score.toFixed(1)}</span>
-        </div>`;
+        `;
     }
     document.getElementById('strategy-scores').innerHTML = scoresHtml;
     
