@@ -1895,57 +1895,6 @@ function calculateDynamicProfitTarget(entry, direction, currentVolatility, marke
     return baseTP;
 }
 
-// NEW: Enhanced Circuit Breaker with Market Conditions
-const adaptiveCircuitBreaker = {
-    isActive: false,
-    activationConditions: [
-        { volatility: 0.04, maxPositions: 2 },
-        { consecutiveLosses: 3, maxRisk: 0.01 },
-        { correlation: 0.8, maxSimilarTrades: 1 }
-    ],
-    
-    checkMarketStress() {
-        const currentVolatility = calculateMarketVolatility();
-        const averageVolatility = getAverageVolatility();
-        
-        if (currentVolatility > averageVolatility * 2) {
-            this.activate('HIGH_VOLATILITY', { maxPositionSize: 0.02 });
-            return true;
-        }
-        
-        // Check consecutive losses
-        const recentTrades = tradeHistory.slice(-5);
-        const consecutiveLosses = recentTrades.filter(t => t.plPercent < 0).length;
-        if (consecutiveLosses >= 3) {
-            this.activate('CONSECUTIVE_LOSSES', { maxPositionSize: 0.01 });
-            return true;
-        }
-        
-        return false;
-    },
-    
-    activate(reason, restrictions) {
-        this.isActive = true;
-        console.log(`🛑 Adaptive Circuit Breaker Activated: ${reason}`);
-        
-        // Apply restrictions
-        Object.assign(advancedProfitConfig.kelly, restrictions);
-        
-        // Show alert
-        if (telegramAlertsEnabled) {
-            sendTelegramAlert(`🛑 CIRCUIT BREAKER ACTIVATED\nReason: ${reason}\nRestrictions applied for safety.`);
-        }
-    },
-    
-    deactivate() {
-        this.isActive = false;
-        console.log('✅ Adaptive Circuit Breaker Deactivated');
-        
-        // Reset to normal settings
-        advancedProfitConfig.kelly.maxFraction = 0.25;
-        advancedProfitConfig.kelly.maxPosition = 0.1;
-    }
-};
 
 // NEW: Calculate market volatility (simplified)
 function calculateMarketVolatility() {
@@ -2122,10 +2071,7 @@ function calculateSymbolCorrelation(symbol1, symbol2) {
 
 // NEW: Enhanced analyzeLive function with all advanced features
 async function analyzeLiveWithAdvancedFeatures(symbol) {
-    // Check market stress conditions
-    if (adaptiveCircuitBreaker.checkMarketStress()) {
-        return;
-    }
+   
     
     const startTime = performance.now();
     
@@ -4208,7 +4154,6 @@ function updatePerformanceMetrics() {
     // Update performance tab
     const systemHealth = document.getElementById('system-health');
     const performanceStats = document.getElementById('performance-stats');
-    const circuitBreakerStatus = document.getElementById('circuit-breaker-status');
     
     if (systemHealth) {
         systemHealth.innerHTML = `
@@ -4233,13 +4178,6 @@ function updatePerformanceMetrics() {
         `;
     }
     
-    if (circuitBreakerStatus) {
-        circuitBreakerStatus.innerHTML = `
-            <div>Status: <span style="color: ${circuitBreakerTripped ? '#ff4444' : '#00ff00'}">${circuitBreakerTripped ? 'TRIPPED' : 'READY'}</span></div>
-            <div>Consecutive Errors: ${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}</div>
-            <div>Total Errors: ${errorCount}</div>
-        `;
-    }
     
     performanceMetrics.lastHealthCheck = Date.now();
 }
@@ -5033,10 +4971,6 @@ function updateMLAnalysis() {
 
 // SUPER-POWERED: Merged analyzeLive function with ML + Profitability Features
 async function analyzeLive(symbol) {
-    if (circuitBreakerTripped) {
-        console.warn('Circuit breaker active - skipping analysis');
-        return;
-    }
     
     const startTime = performance.now();
     
@@ -5378,10 +5312,6 @@ async function startBot(){
         // Update Telegram settings
         updateTelegramSettings();
         
-        // Reset error counters on fresh start (only if no state loaded)
-        if (!stateLoaded) {
-            resetCircuitBreaker();
-        }
         
         // Update status indicators
         document.getElementById("status").textContent = "RUNNING";
@@ -5580,7 +5510,6 @@ let symbols = []; // Array of symbols to monitor
 let errorCount = 0;
 let consecutiveErrors = 0;
 const MAX_CONSECUTIVE_ERRORS = 5;
-let circuitBreakerTripped = false;
 let recoveryAttempts = 0;
 const MAX_RECOVERY_ATTEMPTS = 3;
 let performanceMetrics = {
@@ -6076,10 +6005,6 @@ function logError(error, context = 'Unknown') {
         showError(error, context);
     }
     
-    // Check circuit breaker
-    checkCircuitBreaker();
-    
-    return errorDetails;
 }
 
 function showError(error, context) {
@@ -6118,100 +6043,6 @@ function hideRecovery() {
     document.getElementById('recovery-status').classList.remove('show');
 }
 
-function checkCircuitBreaker() {
-    const circuitBreakerMode = document.getElementById('circuit-breaker').value;
-    
-    if (circuitBreakerMode === 'disabled') return false;
-    
-    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS || errorCount > 20) {
-        circuitBreakerTripped = true;
-        document.getElementById('circuit-status').textContent = 'TRIPPED';
-        document.getElementById('circuit-status').style.color = '#ff4444';
-        
-        if (isRunning) {
-            stopBot();
-            showError(new Error('Circuit breaker tripped due to excessive errors'), 'Safety System');
-            showRecovery('Circuit breaker activated. Bot stopped for safety.');
-        }
-        
-        return true;
-    }
-    
-    return false;
-}
-
-function resetCircuitBreaker() {
-    circuitBreakerTripped = false;
-    consecutiveErrors = 0;
-    
-    // Reset adaptive circuit breaker
-    if (typeof adaptiveCircuitBreaker !== 'undefined') {
-        adaptiveCircuitBreaker.isActive = false;
-        // Reset Kelly settings to normal
-        advancedProfitConfig.kelly.maxFraction = 0.25;
-        advancedProfitConfig.kelly.maxPosition = 0.1;
-    }
-    
-    // Clear trade history that's causing the consecutive losses trigger
-    const recentTrades = tradeHistory.slice(-5);
-    const lossCount = recentTrades.filter(t => t.plPercent < 0).length;
-    
-    if (lossCount >= 3) {
-        console.log('🔄 Clearing recent loss history to reset circuit breaker');
-        // Optionally clear the last few losing trades
-        tradeHistory = tradeHistory.slice(0, -3);
-    }
-    
-    document.getElementById('circuit-status').textContent = 'READY';
-    document.getElementById('circuit-status').style.color = '#00ff00';
-    console.log('✅ Circuit breaker reset - ready for new trades');
-    
-    // Force save the reset state
-    saveBotState();
-}
-
-
-async function attemptRecovery() {
-    if (recoveryAttempts >= MAX_RECOVERY_ATTEMPTS) {
-        showError(new Error('Maximum recovery attempts reached'), 'Recovery System');
-        return false;
-    }
-    
-    recoveryAttempts++;
-    performanceMetrics.recoveryAttempts++;
-    
-    showRecovery(`Attempting recovery (${recoveryAttempts}/${MAX_RECOVERY_ATTEMPTS})...`);
-    
-    try {
-        // Stop everything
-        if (ws) {
-            ws.close();
-            ws = null;
-        }
-        
-        // Clear buffers
-        candleBuffers = {};
-        
-        // Reset error counters
-        resetCircuitBreaker();
-        
-        // Wait a bit
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        // Try to restart
-        await startBot();
-        
-        hideRecovery();
-        recoveryAttempts = 0;
-        return true;
-        
-    } catch (error) {
-        logError(error, 'Recovery Attempt');
-        showRecovery(`Recovery failed: ${error.message}`);
-        return false;
-    }
-    
-}
 
 /* -------------------------
    UPDATED: MORE AGGRESSIVE ADAPTIVE STRATEGY DETECTION
@@ -7566,7 +7397,6 @@ function setupWebSocket(symbols, interval) {
       performanceMetrics.wsReconnects++;
       document.getElementById("ws-status").textContent = "✅ Connected";
       document.getElementById("ws-status").style.color = "#00ff00";
-      resetCircuitBreaker();
     };
     
     ws.onerror = (err) => { 
@@ -7637,10 +7467,7 @@ async function startBot(){
         // Update Telegram settings
         updateTelegramSettings();
         
-        // Reset error counters on fresh start (only if no state loaded)
-        if (!stateLoaded) {
-            resetCircuitBreaker();
-        }
+    
         
         // Update status indicators
         document.getElementById("status").textContent = "RUNNING";
