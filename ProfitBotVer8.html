@@ -965,6 +965,7 @@
           <button onclick="clearBotData()" style="background: linear-gradient(45deg, #ff4444, #ff6666); color: white;">🗑️ Clear Data</button>
           <!-- NEW: Advanced Features Button -->
           <button onclick="toggleAdvancedFeatures()" style="background: linear-gradient(45deg, #00ff99, #33ffaa); color: black;">⚡ Advanced Features</button>
+    
         </div>
 
         <!-- NEW: Symbol Selector -->
@@ -2121,11 +2122,6 @@ function calculateSymbolCorrelation(symbol1, symbol2) {
 
 // NEW: Enhanced analyzeLive function with all advanced features
 async function analyzeLiveWithAdvancedFeatures(symbol) {
-    if (circuitBreakerTripped || adaptiveCircuitBreaker.isActive) {
-        console.warn('Circuit breaker active - skipping analysis');
-        return;
-    }
-    
     // Check market stress conditions
     if (adaptiveCircuitBreaker.checkMarketStress()) {
         return;
@@ -2236,6 +2232,10 @@ async function analyzeLiveWithAdvancedFeatures(symbol) {
         // Update analytics
         updateAdvancedAnalytics();
         updatePerformanceMetrics();
+        
+
+
+
         
     } catch (error) {
         logError(error, `Advanced Analysis for ${symbol}`);
@@ -3458,17 +3458,17 @@ function updateAdvancedMetricsDisplay() {
     document.getElementById('profit-factor').textContent = metrics.profitFactor ? metrics.profitFactor.toFixed(2) : '-';
     document.getElementById('expectancy').textContent = (metrics.expectancy || '0') + '%';
     
-    // Update portfolio metrics
-    const activePositions = Object.values(activeTrades).filter(t => t.open).length;
+    // FIXED: Add null checks for activeTrades
+    const activePositions = Object.values(activeTrades).filter(t => t && t.open).length;
     const portfolioRisk = Object.values(activeTrades)
-        .filter(t => t.open)
+        .filter(t => t && t.open)
         .reduce((sum, t) => sum + (t.positionSize || 0), 0);
     
     document.getElementById('active-positions').textContent = activePositions;
     document.getElementById('portfolio-risk-display').textContent = (portfolioRisk * 100).toFixed(1) + '%';
     
-    // Calculate correlation score (simplified)
-    const symbols = Object.values(activeTrades).filter(t => t.open).map(t => t.symbol);
+    // FIXED: Add null check here too
+    const symbols = Object.values(activeTrades).filter(t => t && t.open).map(t => t.symbol);
     const correlationScore = calculatePortfolioCorrelation(symbols);
     document.getElementById('correlation-score').textContent = correlationScore.toFixed(2);
     
@@ -3498,154 +3498,6 @@ function calculatePortfolioCorrelation(symbols) {
     return concentration;
 }
 
-// NEW: Enhanced analyzeLive function with profitability features
-function analyzeLive(symbol) {
-    if (circuitBreakerTripped) {
-        console.warn('Circuit breaker tripped - skipping analysis');
-        return;
-    }
-    
-    const startTime = performance.now();
-    
-    try {
-        if(!candleBuffers[symbol] || candleBuffers[symbol].length < 30) {
-            console.log(`Not enough data for ${symbol}:`, candleBuffers[symbol] ? candleBuffers[symbol].length : 0);
-            return;
-        }
-        
-        // Check active trade for this symbol first
-        let tradeJustClosed = false;
-        if (activeTrades[symbol] && activeTrades[symbol].open) {
-            checkActiveTrade(symbol);
-            
-            if (activeTrades[symbol] && activeTrades[symbol].open) {
-                // Use profit-enhanced signal for active trade monitoring
-                const lastSig = generateProfitEnhancedSignal(
-                    candleBuffers[symbol], 
-                    document.getElementById("risk-level").value, 
-                    parseFloat(document.getElementById("tp-multiplier").value),
-                    symbol
-                );
-                
-                if (symbol === selectedSymbol) {
-                    updateSignalDisplay(lastSig, symbol);
-                }
-                return;
-            } else {
-                tradeJustClosed = true;
-                console.log(`🔄 Trade closed for ${symbol}, looking for new signals...`);
-            }
-        }
-        
-        // Generate profit-enhanced signal
-        const risk = document.getElementById("risk-level").value;
-        const tpMultiplier = parseFloat(document.getElementById("tp-multiplier").value);
-        const sig = generateProfitEnhancedSignal(candleBuffers[symbol], risk, tpMultiplier, symbol);
-
-        // Store the signal for this symbol
-        lastSignals[symbol] = sig;
-
-        // Update enhanced UI if this is the selected symbol
-        if (symbol === selectedSymbol) {
-            updateSignalDisplay(sig, symbol);
-        }
-        
-        // Update multi-symbol signals overview
-        updateMultiSymbolSignals();
-
-        // Update market analysis if this is the selected symbol
-        if (symbol === selectedSymbol) {
-            updateMarketAnalysis(candleBuffers[symbol]);
-        }
-        
-        // Update strategy analysis if this is the selected symbol
-        if (symbol === selectedSymbol) {
-            const marketConditions = analyzeMarketConditions(candleBuffers[symbol]);
-            const strategySelection = adaptiveStrategySelection(candleBuffers[symbol]);
-            updateStrategyAnalysis(marketConditions, strategySelection);
-        }
-
-        const currentTime = Date.now();
-        
-        if(sig.signal !== "HOLD" && sig.confidence >= 55) {
-            if(sig.signal !== lastSignals[symbol] || currentTime - lastSignalTime > SIGNAL_COOLDOWN || tradeJustClosed){
-                lastSignals[symbol] = sig;
-                lastSignalTime = currentTime;
-                signalCount++;
-                performanceMetrics.signalsGenerated++;
-                
-                document.getElementById("signal-count").textContent = signalCount;
-                document.getElementById("active-strategy").textContent = sig.strategy;
-                document.getElementById("active-strategy").className = `strategy-indicator strategy-${sig.strategy.toLowerCase()}`;
-                
-                // Portfolio optimization
-                const currentSignals = Object.values(lastSignals).filter(s => s && s.signal !== "HOLD" && s.confidence >= 55);
-                const optimizedSignals = optimizePortfolioAllocation(currentSignals, Object.values(activeTrades).filter(t => t.open));
-                
-                // Check if this signal made it through portfolio optimization
-                const optimizedSignal = optimizedSignals.find(s => s.symbol === symbol);
-                if (!optimizedSignal) {
-                    console.log(`🚫 Signal for ${symbol} filtered out by portfolio optimization`);
-                    return;
-                }
-                
-                // Override system for new signals
-                if (activeTrades[symbol] && activeTrades[symbol].open) {
-                    console.log(`🔄 Override system: Closing existing trade for ${symbol} to open new signal`);
-                    closeActiveTrade(symbol, "OVERRIDDEN", candleBuffers[symbol][candleBuffers[symbol].length-1].close);
-                }
-                
-                // Open a trade with profit-enhanced signal
-                openNewTrade(
-                    symbol,
-                    optimizedSignal.signal, 
-                    optimizedSignal.entry, 
-                    optimizedSignal.tp, 
-                    optimizedSignal.sl, 
-                    optimizedSignal.confidence, 
-                    optimizedSignal.marketRegime, 
-                    optimizedSignal.trend, 
-                    optimizedSignal.volumeConfirmation, 
-                    optimizedSignal.patterns,
-                    optimizedSignal.strategy,
-                    optimizedSignal.adaptiveScore,
-                    optimizedSignal.positionSize,
-                    optimizedSignal.takeProfitLevels
-                );
-                
-                renderSignalCard(symbol, sig);
-                
-                // Send portfolio optimization alert
-                if (optimizedSignals.length > 0 && telegramAlertsEnabled) {
-                    sendPortfolioOptimizationAlert(optimizedSignals);
-                }
-                
-                if(sig.confidence >= 65) {
-                    document.getElementById("alert-sound").play();
-                    document.getElementById("signal-type").style.animation = "pulse 1s infinite";
-                    setTimeout(() => {
-                        document.getElementById("signal-type").style.animation = "";
-                    }, 3000);
-                }
-                
-                console.log(`💰 Profit-Enhanced signal for ${symbol}: ${sig.signal} | Position Size: ${sig.positionSize.toFixed(2)} | ML Confidence: ${sig.mlConfidence ? sig.mlConfidence.toFixed(2) : 'N/A'} | Final Confidence: ${sig.confidence}`);
-            }
-        }
-        
-        // Update performance metrics
-        const processingTime = performance.now() - startTime;
-        performanceMetrics.avgProcessingTime = 
-            (performanceMetrics.avgProcessingTime * (performanceMetrics.signalsGenerated - 1) + processingTime) / 
-            performanceMetrics.signalsGenerated;
-            
-        updatePerformanceMetrics();
-        updateMLPerformanceDashboard();
-        updateAdvancedMetricsDisplay();
-        
-    } catch (error) {
-        logError(error, `Profit Enhanced Analysis for ${symbol}`);
-    }
-}
 
 // NEW: Enhanced signal display with profitability info
 function updateSignalDisplay(sig, symbol) {
@@ -5179,10 +5031,10 @@ function updateMLAnalysis() {
    ENHANCED BOT INTEGRATION
    ============================ */
 
-// UPDATED: Enhanced analyzeLive function with ML
-function analyzeLive(symbol) {
+// SUPER-POWERED: Merged analyzeLive function with ML + Profitability Features
+async function analyzeLive(symbol) {
     if (circuitBreakerTripped) {
-        console.warn('Circuit breaker tripped - skipping analysis');
+        console.warn('Circuit breaker active - skipping analysis');
         return;
     }
     
@@ -5200,8 +5052,8 @@ function analyzeLive(symbol) {
             checkActiveTrade(symbol);
             
             if (activeTrades[symbol] && activeTrades[symbol].open) {
-                // Use ML-enhanced signal for active trade monitoring
-                const lastSig = generateMLEnhancedSignal(
+                // Use combined enhanced signal for active trade monitoring
+                const lastSig = await generateCombinedEnhancedSignal(
                     candleBuffers[symbol], 
                     document.getElementById("risk-level").value, 
                     parseFloat(document.getElementById("tp-multiplier").value),
@@ -5218,10 +5070,10 @@ function analyzeLive(symbol) {
             }
         }
         
-        // Generate ML-enhanced signal
+        // Generate COMBINED enhanced signal (ML + Profitability)
         const risk = document.getElementById("risk-level").value;
         const tpMultiplier = parseFloat(document.getElementById("tp-multiplier").value);
-        const sig = generateMLEnhancedSignal(candleBuffers[symbol], risk, tpMultiplier, symbol);
+        const sig = await generateCombinedEnhancedSignal(candleBuffers[symbol], risk, tpMultiplier, symbol);
 
         // Store the signal for this symbol
         lastSignals[symbol] = sig;
@@ -5259,29 +5111,47 @@ function analyzeLive(symbol) {
                 document.getElementById("active-strategy").textContent = sig.strategy;
                 document.getElementById("active-strategy").className = `strategy-indicator strategy-${sig.strategy.toLowerCase()}`;
                 
+                // PORTFOLIO OPTIMIZATION (from profitability version)
+                const currentSignals = Object.values(lastSignals).filter(s => s && s.signal !== "HOLD" && s.confidence >= 55);
+                const optimizedSignals = optimizePortfolioAllocation(currentSignals, Object.values(activeTrades).filter(t => t && t.open));
+                
+                // Check if this signal made it through portfolio optimization
+                const optimizedSignal = optimizedSignals.find(s => s.symbol === symbol);
+                if (!optimizedSignal) {
+                    console.log(`🚫 Signal for ${symbol} filtered out by portfolio optimization`);
+                    return;
+                }
+                
                 // Override system for new signals
                 if (activeTrades[symbol] && activeTrades[symbol].open) {
                     console.log(`🔄 Override system: Closing existing trade for ${symbol} to open new signal`);
                     closeActiveTrade(symbol, "OVERRIDDEN", candleBuffers[symbol][candleBuffers[symbol].length-1].close);
                 }
                 
-                // Open a trade with ML-enhanced signal
+                // Open a trade with COMBINED enhanced signal
                 openNewTrade(
                     symbol,
-                    sig.signal, 
-                    sig.entry, 
-                    sig.tp, 
-                    sig.sl, 
-                    sig.confidence, 
-                    sig.marketRegime, 
-                    sig.trend, 
-                    sig.volumeConfirmation, 
-                    sig.patterns,
-                    sig.strategy,
-                    sig.adaptiveScore
+                    optimizedSignal.signal, 
+                    optimizedSignal.entry, 
+                    optimizedSignal.tp, 
+                    optimizedSignal.sl, 
+                    optimizedSignal.confidence, 
+                    optimizedSignal.marketRegime, 
+                    optimizedSignal.trend, 
+                    optimizedSignal.volumeConfirmation, 
+                    optimizedSignal.patterns,
+                    optimizedSignal.strategy,
+                    optimizedSignal.adaptiveScore,
+                    optimizedSignal.positionSize, // From profitability features
+                    optimizedSignal.takeProfitLevels // From profitability features
                 );
                 
                 renderSignalCard(symbol, sig);
+                
+                // Send portfolio optimization alert (from profitability version)
+                if (optimizedSignals.length > 0 && telegramAlertsEnabled) {
+                    sendPortfolioOptimizationAlert(optimizedSignals);
+                }
                 
                 if(sig.confidence >= 65) {
                     document.getElementById("alert-sound").play();
@@ -5291,11 +5161,14 @@ function analyzeLive(symbol) {
                     }, 3000);
                 }
                 
-                console.log(`🤖 ML-Enhanced signal for ${symbol}: ${sig.signal} | ML Confidence: ${sig.mlConfidence ? sig.mlConfidence.toFixed(2) : 'N/A'} | Final Confidence: ${sig.confidence}`);
+                console.log(`🚀 SUPER-POWERED signal for ${symbol}: ${sig.signal} | ` +
+                           `ML Confidence: ${sig.mlConfidence ? (sig.mlConfidence * 100).toFixed(1) : 'N/A'}% | ` +
+                           `Position Size: ${sig.positionSize ? (sig.positionSize * 100).toFixed(1) : 'N/A'}% | ` +
+                           `Final Confidence: ${sig.confidence.toFixed(1)}%`);
             }
         }
         
-        // Update performance metrics
+        // Update ALL performance metrics
         const processingTime = performance.now() - startTime;
         performanceMetrics.avgProcessingTime = 
             (performanceMetrics.avgProcessingTime * (performanceMetrics.signalsGenerated - 1) + processingTime) / 
@@ -5303,10 +5176,142 @@ function analyzeLive(symbol) {
             
         updatePerformanceMetrics();
         updateMLPerformanceDashboard();
+        updateAdvancedMetricsDisplay();
         
     } catch (error) {
-        logError(error, `ML Enhanced Analysis for ${symbol}`);
+        logError(error, `Combined Enhanced Analysis for ${symbol}`);
     }
+}
+
+// NEW: Combined Enhanced Signal Generator (ML + Profitability)
+async function generateCombinedEnhancedSignal(data, riskLevel, tpMultiplier, symbol) {
+    // STEP 1: Get ML-enhanced base signal
+    const mlSignal = generateMLEnhancedSignal(data, riskLevel, tpMultiplier, symbol);
+    
+    // STEP 2: Enhance with profitability features
+    const orderFlow = analyzeOrderFlow(data);
+    const liquidityZones = findLiquidityZones(data);
+    const marketConditions = detectAdvancedMarketRegime(data);
+    
+    // STEP 3: Optimize entry timing
+    const optimizedSignal = optimizeEntryTiming(data, mlSignal);
+    
+    // STEP 4: Calculate dynamic position size
+    const volatility = calculateVolatility(data, 20);
+    const currentHoldings = Object.values(activeTrades).filter(t => t && t.open);
+    const positionSize = calculateDynamicPositionSize(
+        symbol, 
+        optimizedSignal.confidence, 
+        volatility,
+        currentHoldings
+    );
+    
+    // STEP 5: Calculate adaptive take profit levels
+    const takeProfitLevels = calculateAdaptiveTakeProfit(
+        optimizedSignal.entry,
+        optimizedSignal.signal,
+        volatility,
+        marketConditions.regime,
+        optimizedSignal.confidence
+    );
+    
+    // STEP 6: Enhanced stop loss with microstructure
+    const enhancedStopLoss = smartStopLossWithMicrostructure(
+        data,
+        optimizedSignal.signal,
+        optimizedSignal.confidence,
+        orderFlow,
+        liquidityZones
+    );
+    
+    // STEP 7: Multi-timeframe confirmation (async)
+    const mtfConfirmation = await checkMultiTimeframeConfirmation(symbol, optimizedSignal);
+    
+    // STEP 8: Combine confidence from both systems
+    const baseConfidence = optimizedSignal.confidence;
+    const mlConfidence = optimizedSignal.mlConfidence || 0.5;
+    const mtfConfidence = mtfConfirmation.confidence || 0.5;
+    
+    // Weighted combination: ML(40%) + Profitability(40%) + Multi-TF(20%)
+    const combinedConfidence = (
+        (baseConfidence * 0.4) + 
+        (mlConfidence * 100 * 0.4) + 
+        (mtfConfidence * 100 * 0.2)
+    );
+    
+    return {
+        ...optimizedSignal,
+        // Enhanced entries
+        entry: optimizedSignal.entry,
+        tp: takeProfitLevels.tp1,
+        sl: enhancedStopLoss,
+        
+        // Combined confidence
+        confidence: Math.min(95, Math.max(25, combinedConfidence)),
+        
+        // Advanced features
+        positionSize: positionSize,
+        takeProfitLevels: takeProfitLevels,
+        orderFlow: orderFlow,
+        liquidityZones: liquidityZones,
+        marketConditions: marketConditions,
+        
+        // ML features
+        mlPrediction: optimizedSignal.mlPrediction,
+        mlConfidence: optimizedSignal.mlConfidence,
+        mlOverride: optimizedSignal.mlOverride,
+        
+        // Profitability metrics
+        expectedValue: calculateExpectedValue(optimizedSignal, positionSize),
+        riskAdjustedReturn: calculateRiskAdjustedReturn(optimizedSignal, positionSize, volatility),
+        
+        // Multi-timeframe confirmation
+        mtfConfirmed: mtfConfirmation.confirmed,
+        mtfConfidence: mtfConfirmation.confidence,
+        
+        // Signal source tracking
+        signalSource: 'COMBINED_ML_PROFITABILITY',
+        combinedScore: (optimizedSignal.adaptiveScore || 0) * (mlConfidence || 0.5) * (mtfConfidence || 0.5)
+    };
+}
+
+// Update the signal display to show combined information
+function updateSignalDisplay(sig, symbol) {
+    document.getElementById("signal-type").textContent = sig.signal;
+    document.getElementById("signal-type").className = sig.signal.toLowerCase();
+    document.getElementById("entry-price").textContent = sig.entry ? sig.entry.toFixed(5) : "-";
+    document.getElementById("tp-price").textContent = sig.tp ? sig.tp.toFixed(5) : "-";
+    document.getElementById("sl-price").textContent = sig.sl ? sig.sl.toFixed(5) : "-";
+    document.getElementById("risk-reward").textContent = sig.rr ? `1:${sig.rr.toFixed(2)}` : "-";
+    document.getElementById("volume-confirmation").textContent = sig.volumeConfirmation;
+    document.getElementById("market-regime").textContent = sig.marketRegime;
+    document.getElementById("trend-type").textContent = sig.trend;
+    document.getElementById("strategy-type").innerHTML = `${sig.strategy} <span class="strategy-indicator strategy-${sig.strategy.toLowerCase()}">${sig.strategy}</span>`;
+    document.getElementById("adaptive-score").textContent = sig.adaptiveScore ? sig.adaptiveScore.toFixed(1) : "-";
+    
+    // COMBINED Information
+    document.getElementById("ml-confidence").textContent = sig.mlConfidence ? (sig.mlConfidence * 100).toFixed(1) + '%' : '-';
+    document.getElementById("ml-override").textContent = sig.mlOverride ? 'YES' : 'NO';
+    document.getElementById("position-size").textContent = sig.positionSize ? (sig.positionSize * 100).toFixed(1) + '%' : '-';
+    document.getElementById("order-flow").textContent = sig.orderFlow ? sig.orderFlow.sentiment : '-';
+    document.getElementById("liquidity-status").textContent = sig.liquidityZones ? `${sig.liquidityZones.length} zones` : '-';
+    
+    // Show combined confidence breakdown
+    if (sig.mlConfidence || sig.mtfConfidence) {
+        let confidenceBreakdown = `Confidence: ${sig.confidence.toFixed(1)}%`;
+        if (sig.mlConfidence) {
+            confidenceBreakdown += ` (ML: ${(sig.mlConfidence * 100).toFixed(1)}%)`;
+        }
+        if (sig.mtfConfidence) {
+            confidenceBreakdown += ` (MTF: ${(sig.mtfConfidence * 100).toFixed(1)}%)`;
+        }
+        document.getElementById("confidence-text").textContent = confidenceBreakdown;
+    } else {
+        document.getElementById("confidence-text").textContent = `Confidence: ${sig.confidence.toFixed(1)}%`;
+    }
+    
+    document.getElementById("confidence-fill").style.width = `${sig.confidence}%`;
+    document.getElementById("confidence-fill").textContent = `${sig.confidence.toFixed(1)}%`;
 }
 
 // UPDATED: Enhanced signal display with ML info
@@ -6136,11 +6141,35 @@ function checkCircuitBreaker() {
 }
 
 function resetCircuitBreaker() {
-    consecutiveErrors = 0;
     circuitBreakerTripped = false;
+    consecutiveErrors = 0;
+    
+    // Reset adaptive circuit breaker
+    if (typeof adaptiveCircuitBreaker !== 'undefined') {
+        adaptiveCircuitBreaker.isActive = false;
+        // Reset Kelly settings to normal
+        advancedProfitConfig.kelly.maxFraction = 0.25;
+        advancedProfitConfig.kelly.maxPosition = 0.1;
+    }
+    
+    // Clear trade history that's causing the consecutive losses trigger
+    const recentTrades = tradeHistory.slice(-5);
+    const lossCount = recentTrades.filter(t => t.plPercent < 0).length;
+    
+    if (lossCount >= 3) {
+        console.log('🔄 Clearing recent loss history to reset circuit breaker');
+        // Optionally clear the last few losing trades
+        tradeHistory = tradeHistory.slice(0, -3);
+    }
+    
     document.getElementById('circuit-status').textContent = 'READY';
     document.getElementById('circuit-status').style.color = '#00ff00';
+    console.log('✅ Circuit breaker reset - ready for new trades');
+    
+    // Force save the reset state
+    saveBotState();
 }
+
 
 async function attemptRecovery() {
     if (recoveryAttempts >= MAX_RECOVERY_ATTEMPTS) {
@@ -6181,6 +6210,7 @@ async function attemptRecovery() {
         showRecovery(`Recovery failed: ${error.message}`);
         return false;
     }
+    
 }
 
 /* -------------------------
@@ -7228,8 +7258,14 @@ function generateEnhancedSignal(data, riskLevel, tpMultiplier){
    NEW: ACTIVE TRADE MANAGEMENT FUNCTIONS (UPDATED FOR MULTI-SYMBOL)
    ------------------------- */
 function checkActiveTrade(symbol) {
+      // Add null/undefined check
     if (!activeTrades[symbol] || !activeTrades[symbol].open) {
         console.log(`🔄 No active trade for ${symbol}`);
+        
+        // Clean up any null entries
+        if (activeTrades[symbol] === null) {
+            delete activeTrades[symbol];
+        }
         return;
     }
     
@@ -7564,6 +7600,153 @@ function setupWebSocket(symbols, interval) {
     document.getElementById("ws-status").textContent = "❌ Failed";
     document.getElementById("ws-status").style.color = "#ff4444";
   }
+}
+async function startBot(){
+    if(isRunning) return;
+    
+    try {
+        isRunning = true;
+        
+        // FIRST: Load previous state
+        const stateLoaded = loadBotState();
+        
+        // Parse symbols (use saved ones or from input)
+        if (!stateLoaded || symbols.length === 0) {
+            parseSymbols();
+        }
+        
+        if (symbols.length === 0) {
+            throw new Error("No valid symbols provided");
+        }
+        
+        const interval = document.getElementById("timeframe").value;
+        const strategy = document.getElementById("trading-strategy").value;
+        
+        // Initialize ML Models (only if not loaded from storage)
+        if (!mlModels.ensemble) {
+            initializeMLModels();
+        }
+        
+        // Setup persistence system
+        setupPageUnloadSave();
+        createSaveIndicator();
+        
+        // Start auto-save interval
+        setInterval(autoSave, 10000); // Check every 10 seconds
+        
+        // Update Telegram settings
+        updateTelegramSettings();
+        
+        // Reset error counters on fresh start (only if no state loaded)
+        if (!stateLoaded) {
+            resetCircuitBreaker();
+        }
+        
+        // Update status indicators
+        document.getElementById("status").textContent = "RUNNING";
+        document.getElementById("status").style.color = "#00ff00";
+        document.getElementById("api-status").textContent = "🔄 Testing API...";
+        document.getElementById("api-status").style.color = "#ffaa33";
+        document.getElementById("active-strategy").textContent = strategy;
+        document.getElementById("active-strategy").className = `strategy-indicator strategy-${strategy.toLowerCase()}`;
+        document.getElementById("recover-btn").style.display = "none";
+
+        // Test API connection first with timeout
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+            
+            const testRes = await fetch(`https://api.binance.com/api/v3/ping`, {
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            
+            if (!testRes.ok) throw new Error("Binance API unavailable");
+            document.getElementById("api-status").textContent = "✅ API Connected";
+            document.getElementById("api-status").style.color = "#00ff00";
+        } catch (error) {
+            throw new Error(`API test failed: ${error.message}`);
+        }
+
+        // Load historical data only if we don't have recent candles
+        let needHistoricalData = true;
+        if (candleBuffers[selectedSymbol] && candleBuffers[selectedSymbol].length > 100) {
+            const lastCandleTime = candleBuffers[selectedSymbol][candleBuffers[selectedSymbol].length - 1].time;
+            const timeDiff = Date.now() - lastCandleTime;
+            // If we have data from less than 5 minutes ago, reuse it
+            if (timeDiff < 5 * 60 * 1000) {
+                needHistoricalData = false;
+                console.log('🔄 Reusing existing candle data');
+            }
+        }
+
+        if (needHistoricalData) {
+            try {
+                document.getElementById("api-status").textContent = "🔄 Loading data...";
+                
+                for (const symbol of symbols) {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 15000);
+                    
+                    const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${BUFFER_SIZE}`, {
+                        signal: controller.signal
+                    });
+                    clearTimeout(timeoutId);
+                    
+                    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText} for ${symbol}`);
+                    
+                    const hist = await res.json();
+                    if (!Array.isArray(hist)) throw new Error("Invalid response format");
+                    
+                    candleBuffers[symbol] = hist.map(k => ({ time: k[0], open: +k[1], high: +k[2], low: +k[3], close: +k[4], volume: +k[5] }));
+                    lastSignals[symbol] = null;
+                    
+                    console.log(`✅ Loaded ${candleBuffers[symbol].length} candles for ${symbol}`);
+                }
+                
+                document.getElementById("api-status").textContent = "✅ Data loaded";
+            } catch (err) {
+                throw new Error(`Failed to fetch historical candles: ${err.message}`);
+            }
+        }
+
+        // Analyze data for each symbol with ML
+        symbols.forEach(symbol => {
+            if (candleBuffers[symbol] && candleBuffers[symbol].length > 0) {
+                analyzeLive(symbol);
+            }
+        });
+        
+        updateChart();
+
+        // Open websocket for live kline updates
+        if(ws) {
+            try { ws.close(); } catch(e) { console.warn('Error closing previous WS:', e); }
+        }
+        
+        document.getElementById("ws-status").textContent = "🔄 Connecting...";
+        document.getElementById("ws-status").style.color = "#ffaa33";
+        
+        setupWebSocket(symbols, interval);
+        
+    } catch (error) {
+        const errorDetails = logError(error, 'Start Bot');
+        document.getElementById("status").textContent = "ERROR";
+        document.getElementById("status").style.color = "#ff4444";
+        document.getElementById("api-status").textContent = "❌ Connection Failed";
+        document.getElementById("api-status").style.color = "#ff4444";
+        document.getElementById("recover-btn").style.display = "block";
+        isRunning = false;
+        
+        // Auto-recovery for certain errors
+        if (!error.message.includes('symbol') && !error.message.includes('Invalid')) {
+            setTimeout(() => {
+                if (!isRunning && recoveryAttempts < MAX_RECOVERY_ATTEMPTS) {
+                    attemptRecovery();
+                }
+            }, 5000);
+        }
+    }
 }
 
 function stopBot(){
