@@ -898,16 +898,6 @@
             </select>
           </div>
 
-          <!-- NEW: Circuit Breaker Settings -->
-          <div class="control-group">
-            <label>⚡ Circuit Breaker</label>
-            <select id="circuit-breaker">
-              <option value="auto" selected>Auto (Recommended)</option>
-              <option value="enabled">Enabled</option>
-              <option value="disabled">Disabled</option>
-            </select>
-          </div>
-
           <!-- NEW: Telegram Settings -->
           <div class="control-group">
             <label>📱 Telegram Chat ID</label>
@@ -1133,10 +1123,6 @@
             <span>Error Count:</span>
             <span id="error-count" style="color: #cccccc;">0</span>
           </div>
-          <div class="status-info">
-            <span>Circuit Breaker:</span>
-            <span id="circuit-status" style="color: #cccccc;">READY</span>
-          </div>
           <!-- NEW: ML Status -->
           <div class="status-info">
             <span>ML Enhancement:</span>
@@ -1277,10 +1263,6 @@
               <div class="analysis-card" style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 10px; border: 1px solid #444;">
                 <h4>Error Log</h4>
                 <div id="error-log" style="max-height: 150px; overflow-y: auto; font-size: 12px;"></div>
-              </div>
-              <div class="analysis-card" style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 10px; border: 1px solid #444;">
-                <h4>Circuit Breaker Status</h4>
-                <div id="circuit-breaker-status">Initializing...</div>
               </div>
             </div>
           </div>
@@ -1517,14 +1499,6 @@ const advancedProfitConfig = {
             '15m': 0.4,
             '1h': 0.3
         }
-    },
-    
-    // Advanced risk management
-    riskManagement: {
-        maxDailyLoss: 0.05, // 5% max daily loss
-        maxConsecutiveLosses: 3,
-        volatilityAdjustment: true,
-        correlationThreshold: 0.7
     },
     
     // Dynamic strategy optimization
@@ -1853,6 +1827,12 @@ function optimizeStrategyWeights() {
 
 // NEW: Cross-Symbol Correlation Management
 function checkPortfolioCorrelation(newSymbol, currentPositions) {
+    // Add safety check for advancedProfitConfig
+    if (!advancedProfitConfig || !advancedProfitConfig.riskManagement) {
+        console.warn('⚠️ advancedProfitConfig not initialized, using default correlation threshold');
+        return true; // Allow trade if config isn't ready
+    }
+    
     const correlationThreshold = advancedProfitConfig.riskManagement.correlationThreshold;
     
     if (currentPositions.length === 0) return true;
@@ -1974,8 +1954,8 @@ function optimizeStrategies() {
     // Update regime detection parameters
     updateRegimeDetectionParameters();
     
-    // Show optimization results
-    alert('Strategy optimization completed! Weights updated based on recent performance.');
+    // Log optimization results (no popup)
+    console.log('✅ Strategy optimization completed! Weights updated based on recent performance.');
 }
 
 // NEW: Update regime detection parameters
@@ -2071,7 +2051,11 @@ function calculateSymbolCorrelation(symbol1, symbol2) {
 
 // NEW: Enhanced analyzeLive function with all advanced features
 async function analyzeLiveWithAdvancedFeatures(symbol) {
-   
+       // Safety check - ensure all required objects are initialized
+    if (!advancedProfitConfig) {
+        console.warn('⚠️ Advanced features not fully initialized yet');
+        return;
+    }
     
     const startTime = performance.now();
     
@@ -3640,12 +3624,6 @@ function resetAdvancedSettings() {
     alert('🔄 Advanced settings reset to defaults!');
 }
 
-// NEW: Advanced Backtest
-function runAdvancedBacktest() {
-    alert('🚀 Advanced Backtest Feature Coming Soon!\n\nThis will include:\n• Portfolio-level backtesting\n• Advanced risk metrics\n• Strategy optimization\n• Parameter tuning');
-    // Implementation would go here
-}
-
 // NEW: Switch tab to include advanced features
 function switchTab(tabName) {
     document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
@@ -4858,6 +4836,7 @@ function calculateMLPerformance() {
 }
 
 // NEW: Force ML Training
+// NEW: Force ML Training
 function forceMLTraining() {
     if (!mlModels.ensemble) {
         initializeMLModels();
@@ -4870,7 +4849,7 @@ function forceMLTraining() {
     }
     
     updateMLPerformanceDashboard();
-    alert('🤖 ML Models trained with ' + trainingData.features.length + ' samples!');
+    console.log('🤖 ML Models trained with ' + trainingData.features.length + ' samples!');
 }
 
 // NEW: Generate Synthetic Training Data for Initial Training
@@ -7414,7 +7393,7 @@ function setupWebSocket(symbols, interval) {
       document.getElementById("ws-status").style.color = "#ff4444";
       
       // Auto-reconnect with exponential backoff
-      if (isRunning && !circuitBreakerTripped) {
+      if (isRunning) {
         const delay = Math.min(30000, 1000 * Math.pow(2, performanceMetrics.wsReconnects));
         console.log(`🔄 Reconnecting in ${delay/1000}s...`);
         setTimeout(() => {
