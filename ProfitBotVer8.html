@@ -1471,6 +1471,26 @@
   <audio id="alert-sound" src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" preload="auto"></audio>
 
 <script>
+if (window.location.hostname.includes('github.io') || !window.location.hostname.includes('localhost')) {
+    const originalWebSocket = window.WebSocket;
+    window.WebSocket = function(url, protocols) {
+        if (url && (url.includes('reload') || url.includes('ws/ws') || url.includes('github.com'))) {
+            console.log('🚫 Live reload disabled for GitHub Pages');
+            return {
+                send: () => {},
+                close: () => {},
+                addEventListener: () => {},
+                removeEventListener: () => {},
+                readyState: 3,
+                url: url
+            };
+        }
+        return new originalWebSocket(url, protocols);
+    };
+}
+
+
+
 /* ============================
    ADVANCED PROFITABILITY ENHANCEMENTS
    ============================ */
@@ -1828,12 +1848,12 @@ function optimizeStrategyWeights() {
 // NEW: Cross-Symbol Correlation Management
 function checkPortfolioCorrelation(newSymbol, currentPositions) {
     // Add safety check for advancedProfitConfig
-    if (!advancedProfitConfig || !advancedProfitConfig.riskManagement) {
+    if (!advancedProfitConfig || !advancedProfitConfig.portfolio) {
         console.warn('⚠️ advancedProfitConfig not initialized, using default correlation threshold');
         return true; // Allow trade if config isn't ready
     }
     
-    const correlationThreshold = advancedProfitConfig.riskManagement.correlationThreshold;
+    const correlationThreshold = advancedProfitConfig.portfolio.maxCorrelation || 0.7;
     
     if (currentPositions.length === 0) return true;
     
